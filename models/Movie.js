@@ -3,38 +3,19 @@ const mongoose = require("mongoose");
 // ===============================
 // COMMENT SCHEMA
 // ===============================
-// NOTE: This schema represents a comment under a movie.
-// Existing fields:
-// - userId: which user posted the comment
-// - comment: the comment text
-//
-// NEW FIELDS ADDED FOR COMMENT ENHANCEMENTS:
-// - parentCommentId: allows nested/threaded replies (null = top-level comment)
-// - isEdited: indicates the comment was edited
-// - editedAt: timestamp of last edit
 const commentSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
     },
     comment: {
-        type: String
+        type: String,
+        required: true
     },
-
-    // ===============================
-    // NEW: NESTED COMMENTS SUPPORT
-    // ===============================
-    // NOTE: If parentCommentId is null -> this is a top-level comment.
-    // If parentCommentId has a value -> this is a reply to another comment.
     parentCommentId: {
         type: mongoose.Schema.Types.ObjectId,
         default: null
     },
-
-    // ===============================
-    // NEW: EDIT TRACKING
-    // ===============================
-    // NOTE: Used for "Edit Own Comment" and "Admin Edit Any Comment".
     isEdited: {
         type: Boolean,
         default: false
@@ -45,13 +26,37 @@ const commentSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
+// ===============================
+// MOVIE SCHEMA
+// ===============================
 const movieSchema = new mongoose.Schema({
-    title: String,
-    director: String,
-    year: Number,
-    description: String,
-    genre: String,
-    comments: [commentSchema]
+  title: {
+    type: String,
+    required: true
+  },
+  director: {
+    type: String,
+    required: true
+  },
+  year: {
+    type: Number,
+    required: true
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  genre: {
+    type: String,
+    required: true
+  },
+
+  // 🔥 IMPORTANT: Attach comments here
+  comments: [commentSchema]
+
 }, { timestamps: true });
+
+// Unique compound index
+movieSchema.index({ title: 1, year: 1 }, { unique: true });
 
 module.exports = mongoose.model("Movie", movieSchema);
