@@ -78,24 +78,34 @@ exports.addMovie = async (req, res) => {
       return res.status(400).json({ message: "Movie title is required." })
     }
 
-    // Fetch from OMDb
-    const omdbRes = await axios.get(
-      `http://www.omdbapi.com/?t=${encodeURIComponent(
-        title.trim()
-      )}&apikey=${process.env.OMDB_API_KEY}`
-    )
+    if (!process.env.OMDB_API_KEY) {
+      console.log("ADD MOVIE ERROR >>> OMDB_API_KEY missing in environment")
+      return res.status(500).json({ message: "OMDB_API_KEY is not set on the server." })
+    }
+
+    const url = `https://www.omdbapi.com/?t=${encodeURIComponent(
+      title.trim()
+    )}&apikey=${process.env.OMDB_API_KEY}`
+
+    const omdbRes = await axios.get(url)
+
+    if (!omdbRes?.data) {
+      console.log("ADD MOVIE ERROR >>> No data from OMDb")
+      return res.status(500).json({ message: "No response from OMDb." })
+    }
 
     if (omdbRes.data.Response === "False") {
-      return res.status(404).json({ message: "Movie not found in OMDb." })
+      return res.status(404).json({ message: omdbRes.data.Error || "Movie not found in OMDb." })
     }
 
     const data = omdbRes.data
-    const parsedYear = parseInt(data.Year) || undefined
+    const parsedYear = parseInt(data.Year, 10)
+    const year = Number.isFinite(parsedYear) ? parsedYear : undefined
 
     const created = await Movie.create({
       title: data.Title,
       director: data.Director,
-      year: parsedYear,
+      year,
       description: data.Plot,
       genre: data.Genre,
       posterUrl: data.Poster,
@@ -104,10 +114,20 @@ exports.addMovie = async (req, res) => {
 
     return res.status(201).json({ message: "Movie added successfully", movie: created })
   } catch (error) {
+    console.log("ADD MOVIE ERROR >>>", error?.message)
+    console.log("ADD MOVIE ERROR FULL >>>", error)
+
     if (error.code === 11000) {
       return res.status(400).json({ message: "Movie already exists (same title and year)." })
     }
-    return res.status(500).json({ message: "Server error" })
+
+    const msg =
+      error?.response?.data?.Error ||
+      error?.response?.data?.message ||
+      error?.message ||
+      "Server error"
+
+    return res.status(500).json({ message: msg })
   }
 }
 
