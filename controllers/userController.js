@@ -9,7 +9,6 @@ exports.register = async (req, res) => {
     try {
         const { email, password, isAdmin } = req.body;
 
-        // Check if email already exists
         const existingUser = await User.findOne({ email });
 
         if (existingUser) {
@@ -18,17 +17,14 @@ exports.register = async (req, res) => {
             });
         }
 
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create user
         await User.create({
             email,
             password: hashedPassword,
             isAdmin: isAdmin || false
         });
 
-        // MUST MATCH EXPECTED OUTPUT EXACTLY
         return res.status(201).json({
             message: "Registered Successfully"
         });
@@ -75,9 +71,14 @@ exports.login = async (req, res) => {
             { expiresIn: "1d" }
         );
 
-        // MUST MATCH EXPECTED OUTPUT EXACTLY
+        // 🔥 UPDATED RESPONSE
         return res.status(200).json({
-            access: token
+            access: token,
+            user: {
+                _id: user._id,
+                email: user.email,
+                isAdmin: user.isAdmin
+            }
         });
 
     } catch (error) {
