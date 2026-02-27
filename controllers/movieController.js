@@ -1,19 +1,18 @@
 const Movie = require("../models/Movie");
 
-// =========================
-// ADD MOVIE (ADMIN ONLY)
-// =========================
+// =======================
+// ADD MOVIE
+// =======================
 exports.addMovie = async (req, res) => {
     try {
-
-        if (!req.user.isAdmin) {
-            return res.status(403).json({
-                message: "Access forbidden"
-            });
-        }
+        const { title, director, year, description, genre } = req.body;
 
         const movie = await Movie.create({
-            ...req.body,
+            title,
+            director,
+            year,
+            description,
+            genre,
             comments: []
         });
 
@@ -26,13 +25,17 @@ exports.addMovie = async (req, res) => {
     }
 };
 
-// =========================
-// GET ALL MOVIES (PUBLIC)
-// =========================
+// =======================
+// GET ALL MOVIES
+// =======================
 exports.getMovies = async (req, res) => {
     try {
         const movies = await Movie.find();
-        return res.status(200).json({ movies });
+
+        return res.status(200).json({
+            movies
+        });
+
     } catch (error) {
         return res.status(500).json({
             message: "Server error"
@@ -40,9 +43,9 @@ exports.getMovies = async (req, res) => {
     }
 };
 
-// =========================
-// GET MOVIE BY ID (PUBLIC)
-// =========================
+// =======================
+// GET MOVIE BY ID
+// =======================
 exports.getMovieById = async (req, res) => {
     try {
         const movie = await Movie.findById(req.params.id);
@@ -62,18 +65,11 @@ exports.getMovieById = async (req, res) => {
     }
 };
 
-// =========================
-// UPDATE MOVIE (ADMIN ONLY)
-// =========================
+// =======================
+// UPDATE MOVIE
+// =======================
 exports.updateMovie = async (req, res) => {
     try {
-
-        if (!req.user.isAdmin) {
-            return res.status(403).json({
-                message: "Access forbidden"
-            });
-        }
-
         const updatedMovie = await Movie.findByIdAndUpdate(
             req.params.id,
             req.body,
@@ -98,18 +94,11 @@ exports.updateMovie = async (req, res) => {
     }
 };
 
-// =========================
-// DELETE MOVIE (ADMIN ONLY)
-// =========================
+// =======================
+// DELETE MOVIE
+// =======================
 exports.deleteMovie = async (req, res) => {
     try {
-
-        if (!req.user.isAdmin) {
-            return res.status(403).json({
-                message: "Access forbidden"
-            });
-        }
-
         const deletedMovie = await Movie.findByIdAndDelete(req.params.id);
 
         if (!deletedMovie) {
@@ -129,12 +118,12 @@ exports.deleteMovie = async (req, res) => {
     }
 };
 
-// =========================
-// ADD COMMENT (AUTHENTICATED USER)
-// =========================
+// =======================
+// ADD COMMENT
+// =======================
+// NOTE: This creates a TOP-LEVEL comment (parentCommentId = null).
 exports.addComment = async (req, res) => {
     try {
-
         const movie = await Movie.findById(req.params.id);
 
         if (!movie) {
@@ -145,7 +134,8 @@ exports.addComment = async (req, res) => {
 
         movie.comments.push({
             userId: req.user.id,
-            comment: req.body.comment
+            comment: req.body.comment,
+            parentCommentId: null
         });
 
         await movie.save();
@@ -162,12 +152,100 @@ exports.addComment = async (req, res) => {
     }
 };
 
-// =========================
+// =======================
+// NEW: REPLY TO A COMMENT
+// =======================
+// NOTE: This creates a REPLY (nested comment) by setting parentCommentId.
+// Route will provide:
+// - movieId in req.params.movieId
+// - parent comment id in req.params.commentId
+exports.replyToComment = async (req, res) => {
+    try {
+        const { movieId, commentId } = req.params;
+
+        const movie = await Movie.findById(movieId);
+
+        if (!movie) {
+            return res.status(404).json({
+                message: "Movie not found"
+            });
+        }
+
+        // Check if the parent comment exists inside the movie
+        const parentComment = movie.comments.id(commentId);
+        if (!parentComment) {
+            return res.status(404).json({
+                message: "Parent comment not found"
+            });
+        }
+
+        movie.comments.push({
+            userId: req.user.id,
+            comment: req.body.comment,
+            parentCommentId: parentComment._id
+        });
+
+        await movie.save();
+
+        return res.status(200).json({
+            message: "reply added successfully",
+            updatedMovie: movie
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            message: "Server error"
+        });
+    }
+};
+
+// =======================
+// HELPER: BUILD THREADED COMMENTS
+// =======================
+// NOTE: Converts a flat array of comments into a nested/threaded structure.
+// Top-level comments are those with parentCommentId = null.
+// Replies are attached under their parent in a "replies" array.
+const buildThreadedComments = (comments) => {
+    const map = new Map();
+
+    // Convert mongoose subdocs to plain objects and add replies container
+    const plain = comments.map(c => {
+        const obj = c.toObject();
+        obj.replies = [];
+        return obj;
+    });
+
+    // Map by comment _id
+    plain.forEach(c => {
+        map.set(String(c._id), c);
+    });
+
+    // Attach replies to parents
+    const roots = [];
+    plain.forEach(c => {
+        if (c.parentCommentId) {
+            const parent = map.get(String(c.parentCommentId));
+            if (parent) {
+                parent.replies.push(c);
+            } else {
+                // If parent not found, treat as root to avoid losing data
+                roots.push(c);
+            }
+        } else {
+            roots.push(c);
+        }
+    });
+
+    return roots;
+};
+
+// =======================
 // GET COMMENTS
-// =========================
+// =======================
+// NOTE: Returns BOTH flat comments and threaded comments.
+// This keeps backward compatibility for any frontend that expects a flat array.
 exports.getComments = async (req, res) => {
     try {
-
         const movie = await Movie.findById(req.params.id);
 
         if (!movie) {
@@ -176,8 +254,136 @@ exports.getComments = async (req, res) => {
             });
         }
 
+        const threadedComments = buildThreadedComments(movie.comments);
+
         return res.status(200).json({
-            comments: movie.comments
+            comments: movie.comments,           // flat
+            threadedComments: threadedComments  // nested
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            message: "Server error"
+        });
+    }
+};
+
+// =======================
+// NEW: EDIT COMMENT (OWNER OR ADMIN)
+// =======================
+// NOTE:
+// - Admin can edit ANY comment.
+// - Non-admin can ONLY edit their own comment.
+exports.editComment = async (req, res) => {
+    try {
+        const { movieId, commentId } = req.params;
+        const { comment } = req.body;
+
+        const movie = await Movie.findById(movieId);
+
+        if (!movie) {
+            return res.status(404).json({
+                message: "Movie not found"
+            });
+        }
+
+        const targetComment = movie.comments.id(commentId);
+
+        if (!targetComment) {
+            return res.status(404).json({
+                message: "Comment not found"
+            });
+        }
+
+        const isOwner = String(targetComment.userId) === String(req.user.id);
+        const isAdmin = req.user.isAdmin === true;
+
+        if (!isOwner && !isAdmin) {
+            return res.status(403).json({
+                message: "Access denied. You can only edit your own comment."
+            });
+        }
+
+        targetComment.comment = comment;
+        targetComment.isEdited = true;
+        targetComment.editedAt = new Date();
+
+        await movie.save();
+
+        return res.status(200).json({
+            message: "comment updated successfully",
+            updatedMovie: movie
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            message: "Server error"
+        });
+    }
+};
+
+// =======================
+// NEW: DELETE COMMENT (OWNER OR ADMIN)
+// =======================
+// NOTE:
+// - Admin can delete ANY comment.
+// - Non-admin can ONLY delete their own comment.
+// - This performs a "cascade delete" of replies (descendants) to avoid orphaned threads.
+exports.deleteComment = async (req, res) => {
+    try {
+        const { movieId, commentId } = req.params;
+
+        const movie = await Movie.findById(movieId);
+
+        if (!movie) {
+            return res.status(404).json({
+                message: "Movie not found"
+            });
+        }
+
+        const targetComment = movie.comments.id(commentId);
+
+        if (!targetComment) {
+            return res.status(404).json({
+                message: "Comment not found"
+            });
+        }
+
+        const isOwner = String(targetComment.userId) === String(req.user.id);
+        const isAdmin = req.user.isAdmin === true;
+
+        if (!isOwner && !isAdmin) {
+            return res.status(403).json({
+                message: "Access denied. You can only delete your own comment."
+            });
+        }
+
+        // -------------------------------
+        // Cascade delete: remove all replies
+        // -------------------------------
+        const idsToDelete = new Set([String(targetComment._id)]);
+
+        // Find descendants iteratively
+        let foundNew = true;
+        while (foundNew) {
+            foundNew = false;
+
+            movie.comments.forEach(c => {
+                if (c.parentCommentId && idsToDelete.has(String(c.parentCommentId)) && !idsToDelete.has(String(c._id))) {
+                    idsToDelete.add(String(c._id));
+                    foundNew = true;
+                }
+            });
+        }
+
+        // Keep only comments NOT in idsToDelete
+        movie.comments = movie.comments.filter(c => !idsToDelete.has(String(c._id)));
+
+        await movie.save();
+
+        return res.status(200).json({
+            message: "comment deleted successfully",
+            updatedMovie: movie
         });
 
     } catch (error) {
