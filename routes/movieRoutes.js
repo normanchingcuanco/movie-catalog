@@ -21,27 +21,6 @@ router.get(
   movieController.getAllCommentsAdmin
 )
 
-router.post(
-  "/addMovie",
-  auth.verify,
-  auth.verifyAdmin,
-  movieController.addMovie
-)
-
-router.patch(
-  "/updateMovie/:id",
-  auth.verify,
-  auth.verifyAdmin,
-  movieController.updateMovie
-)
-
-router.delete(
-  "/deleteMovie/:id",
-  auth.verify,
-  auth.verifyAdmin,
-  movieController.deleteMovie
-)
-
 router.get(
   "/admin/dashboard",
   auth.verify,
@@ -50,63 +29,46 @@ router.get(
 )
 
 // ===============================
+// Community Movie Routes
+// ===============================
+
+// Any logged-in user can add movies
+router.post(
+  "/addMovie",
+  auth.verify,
+  movieController.addMovie
+)
+
+// 🔥 Updated: Creator OR Admin can update
+router.patch(
+  "/updateMovie/:id",
+  auth.verify,
+  movieController.updateMovie
+)
+
+// 🔥 Updated: Creator OR Admin can delete
+router.delete(
+  "/deleteMovie/:id",
+  auth.verify,
+  movieController.deleteMovie
+)
+
+// ===============================
 // Logged-in User Routes
 // ===============================
-router.patch(
-  "/likeMovie/:id",
-  auth.verify,
-  movieController.toggleLikeMovie
-)
+router.patch("/likeMovie/:id", auth.verify, movieController.toggleLikeMovie)
+router.patch("/rateMovie/:id", auth.verify, movieController.rateMovie)
 
-router.patch(
-  "/rateMovie/:id",
-  auth.verify,
-  movieController.rateMovie
-)
-
-router.patch(
-  "/addComment/:id",
-  auth.verify,
-  movieController.addComment
-)
-
-router.patch(
-  "/replyComment/:movieId/:commentId",
-  auth.verify,
-  movieController.replyToComment
-)
-
-router.patch(
-  "/editComment/:movieId/:commentId",
-  auth.verify,
-  movieController.editComment
-)
-
-router.delete(
-  "/deleteComment/:movieId/:commentId",
-  auth.verify,
-  movieController.deleteComment
-)
-
-router.patch(
-  "/reactComment/:movieId/:commentId",
-  auth.verify,
-  movieController.reactToComment
-)
+router.patch("/addComment/:id", auth.verify, movieController.addComment)
+router.patch("/replyComment/:movieId/:commentId", auth.verify, movieController.replyToComment)
+router.patch("/editComment/:movieId/:commentId", auth.verify, movieController.editComment)
+router.delete("/deleteComment/:movieId/:commentId", auth.verify, movieController.deleteComment)
+router.patch("/reactComment/:movieId/:commentId", auth.verify, movieController.reactToComment)
 
 // ===============================
-// Watchlist (Logged-in)
+// Watchlist
 // ===============================
-router.patch(
-  "/watchlist/:movieId",
-  auth.verify,
-  movieController.toggleWatchlist
-)
-
-router.get(
-  "/watchlist",
-  auth.verify,
-  movieController.getWatchlist
-)
+router.patch("/watchlist/:movieId", auth.verify, movieController.toggleWatchlist)
+router.get("/watchlist", auth.verify, movieController.getWatchlist)
 
 module.exports = router

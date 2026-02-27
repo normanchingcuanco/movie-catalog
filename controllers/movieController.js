@@ -1,22 +1,4 @@
-// FILE: controllers/movieController.js
-// NOTE: Rebuilt clean + complete controller to match your routes:
-// - addMovie (OMDb auto fetch + posterUrl)
-// - getMovies (search + genre filter + pagination + sorting)
-// - getMovieById
-// - updateMovie
-// - deleteMovie
-// - toggleLikeMovie
-// - rateMovie (updates/creates rating + recalculates averageRating)
-// - getComments (populates username; returns comments + threadedComments)
-// - addComment
-// - replyToComment
-// - editComment
-// - deleteComment (cascade delete parent + descendants)
-// - reactToComment (like/dislike toggle; prevents duplicates)
-// - getAllCommentsAdmin (flatten all comments across all movies; admin extraction)
-
 const Movie = require("../models/Movie")
-const User = require("../models/User")
 const axios = require("axios")
 
 // ===============================
@@ -112,7 +94,10 @@ exports.addMovie = async (req, res) => {
       year: parsedYear,
       description: data.Plot,
       genre: data.Genre,
-      posterUrl: data.Poster
+      posterUrl: data.Poster,
+
+      // ✅ NEW: track who added the movie
+      createdBy: req.user.id
     })
 
     return res.status(201).json({
@@ -202,20 +187,29 @@ exports.getMovieById = async (req, res) => {
 }
 
 // ===============================
-// UPDATE MOVIE
+// UPDATE MOVIE (CREATOR OR ADMIN)
 // ===============================
 exports.updateMovie = async (req, res) => {
   try {
-    const updated = await Movie.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    })
+    const movie = await Movie.findById(req.params.id)
+    if (!movie) {
+      return res.status(404).json({ message: "Movie not found" })
+    }
 
-    if (!updated) return res.status(404).json({ message: "Movie not found" })
+    const isOwner = String(movie.createdBy) === String(req.user.id)
+    const isAdmin = req.user.isAdmin === true
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: "Unauthorized" })
+    }
+
+    Object.assign(movie, req.body)
+
+    await movie.save()
 
     return res.status(200).json({
       message: "Movie updated successfully",
-      movie: updated
+      movie
     })
   } catch (error) {
     if (error.code === 11000) {
@@ -228,14 +222,28 @@ exports.updateMovie = async (req, res) => {
 }
 
 // ===============================
-// DELETE MOVIE
+// DELETE MOVIE (CREATOR OR ADMIN)
 // ===============================
 exports.deleteMovie = async (req, res) => {
   try {
-    const deleted = await Movie.findByIdAndDelete(req.params.id)
-    if (!deleted) return res.status(404).json({ message: "Movie not found" })
+    const movie = await Movie.findById(req.params.id)
 
-    return res.status(200).json({ message: "Movie deleted successfully" })
+    if (!movie) {
+      return res.status(404).json({ message: "Movie not found" })
+    }
+
+    const isOwner = String(movie.createdBy) === String(req.user.id)
+    const isAdmin = req.user.isAdmin === true
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: "Unauthorized" })
+    }
+
+    await Movie.findByIdAndDelete(req.params.id)
+
+    return res.status(200).json({
+      message: "Movie deleted successfully"
+    })
   } catch (error) {
     return res.status(500).json({ message: "Server error" })
   }
@@ -543,21 +551,15 @@ exports.getAllCommentsAdmin = async (req, res) => {
 // ===============================
 exports.toggleWatchlist = async (req, res) => {
   try {
+    const User = require("../models/User")   // 🔥 Lazy require
+
     const userId = req.user.id
     const movieId = req.params.movieId
 
-    const movie = await Movie.findById(movieId)
-    if (!movie) {
-      return res.status(404).json({ message: "Movie not found" })
-    }
-
     const user = await User.findById(userId)
+
     if (!user) {
       return res.status(404).json({ message: "User not found" })
-    }
-
-    if (!Array.isArray(user.watchlist)) {
-      user.watchlist = []
     }
 
     const exists = user.watchlist.some(
@@ -575,15 +577,15 @@ exports.toggleWatchlist = async (req, res) => {
     await user.save()
 
     return res.status(200).json({
-      message: exists ? "Removed from watchlist" : "Added to watchlist",
+      message: exists
+        ? "Removed from watchlist"
+        : "Added to watchlist",
       totalWatchlist: user.watchlist.length
     })
+
   } catch (error) {
-    console.error("WATCHLIST ERROR >>>", error)
-    return res.status(500).json({
-      message: "Server error",
-      error: error.message
-    })
+    console.log("WATCHLIST ERROR >>>", error)
+    return res.status(500).json({ message: "Server error" })
   }
 }
 
@@ -592,54 +594,56 @@ exports.toggleWatchlist = async (req, res) => {
 // ===============================
 exports.getWatchlist = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).populate("watchlist")
+    const User = require("../models/User")   // 🔥 Lazy require
+
+    const user = await User.findById(req.user.id)
+      .populate("watchlist")
 
     if (!user) {
       return res.status(404).json({ message: "User not found" })
     }
 
     return res.status(200).json({
-      total: user.watchlist?.length || 0,
-      watchlist: user.watchlist || []
+      total: user.watchlist.length,
+      watchlist: user.watchlist
     })
+
   } catch (error) {
-    console.error("GET WATCHLIST ERROR >>>", error)
-    return res.status(500).json({
-      message: "Server error",
-      error: error.message
-    })
+    console.log("GET WATCHLIST ERROR >>>", error)
+    return res.status(500).json({ message: "Server error" })
   }
 }
 
 // ===============================
-// ADMIN DASHBOARD SUMMARY
+// ADMIN DASHBOARD DATA
 // ===============================
 exports.getAdminDashboard = async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments()
+    const User = require("../models/User")   // 🔥 Lazy require
+
     const totalMovies = await Movie.countDocuments()
+    const totalUsers = await User.countDocuments()
 
-    const movies = await Movie.find()
+    const recentMovies = await Movie.find()
+      .sort({ createdAt: -1 })
+      .limit(5)
 
-    let totalComments = 0
-    let totalRatings = 0
-    let totalMovieLikes = 0
-
-    movies.forEach((movie) => {
-      totalComments += movie.comments.length
-      totalRatings += movie.ratings.length
-      totalMovieLikes += movie.likes.length
-    })
+    const recentUsers = await User.find()
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select("-password")
 
     return res.status(200).json({
-      totalUsers,
-      totalMovies,
-      totalComments,
-      totalRatings,
-      totalMovieLikes
+      stats: {
+        totalMovies,
+        totalUsers
+      },
+      recentMovies,
+      recentUsers
     })
+
   } catch (error) {
-    console.error("DASHBOARD ERROR >>>", error)
+    console.log("ADMIN DASHBOARD ERROR >>>", error)
     return res.status(500).json({ message: "Server error" })
   }
 }
