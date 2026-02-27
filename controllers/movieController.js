@@ -1,6 +1,9 @@
+// backend/controllers/movieController.js
+
 const Movie = require("../models/Movie")
 const User = require("../models/User")
 const axios = require("axios")
+const mongoose = require("mongoose")
 
 // ===============================
 // Helpers
@@ -65,7 +68,7 @@ const toNumber = (value, fallback) => {
 }
 
 // ===============================
-// ADD MOVIE (AUTO OMDb FETCH)
+// ADD MOVIE (AUTO OMDb FETCH) - logged-in users
 // ===============================
 exports.addMovie = async (req, res) => {
   try {
@@ -96,21 +99,13 @@ exports.addMovie = async (req, res) => {
       description: data.Plot,
       genre: data.Genre,
       posterUrl: data.Poster,
-
-      // ✅ NEW: track who added the movie
       createdBy: req.user.id
     })
 
-    return res.status(201).json({
-      message: "Movie added successfully",
-      movie: created
-    })
+    return res.status(201).json({ message: "Movie added successfully", movie: created })
   } catch (error) {
-    // Duplicate (unique index: title + year)
     if (error.code === 11000) {
-      return res.status(400).json({
-        message: "Movie already exists (same title and year)."
-      })
+      return res.status(400).json({ message: "Movie already exists (same title and year)." })
     }
     return res.status(500).json({ message: "Server error" })
   }
@@ -134,30 +129,24 @@ exports.getMovies = async (req, res) => {
     }
 
     if (genre) {
-      // genre is stored as string (e.g. "Action, Sci-Fi" from OMDb)
       query.genre = { $regex: genre, $options: "i" }
     }
 
     const skip = (page - 1) * limit
 
-    // Base query (pagination at DB level)
-    let movies = await Movie.find(query)
-      .skip(skip)
-      .limit(limit)
+    let movies = await Movie.find(query).skip(skip).limit(limit)
 
-    // Sorting (client-side based on computed fields)
     if (sort === "highestRated") {
       movies = movies.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0))
     } else if (sort === "mostLiked") {
-      movies = movies.sort((a, b) => (b.likes?.length || 0) - (a.likes?.length || 0))
+      movies = movies.sort((a, b) => (b.likes?.length || 0) - (b.likes?.length || 0))
     } else if (sort === "trending") {
       movies = movies.sort((a, b) => {
-        const scoreA = ((a.averageRating || 0) * 2) + (a.likes?.length || 0)
-        const scoreB = ((b.averageRating || 0) * 2) + (b.likes?.length || 0)
+        const scoreA = (a.averageRating || 0) * 2 + (a.likes?.length || 0)
+        const scoreB = (b.averageRating || 0) * 2 + (b.likes?.length || 0)
         return scoreB - scoreA
       })
     } else {
-      // Default: newest first
       movies = movies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     }
 
@@ -181,6 +170,7 @@ exports.getMovieById = async (req, res) => {
   try {
     const movie = await Movie.findById(req.params.id)
     if (!movie) return res.status(404).json({ message: "Movie not found" })
+
     return res.status(200).json({ movie })
   } catch (error) {
     return res.status(500).json({ message: "Server error" })
@@ -205,18 +195,12 @@ exports.updateMovie = async (req, res) => {
     }
 
     Object.assign(movie, req.body)
-
     await movie.save()
 
-    return res.status(200).json({
-      message: "Movie updated successfully",
-      movie
-    })
+    return res.status(200).json({ message: "Movie updated successfully", movie })
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({
-        message: "Movie already exists (same title and year)."
-      })
+      return res.status(400).json({ message: "Movie already exists (same title and year)." })
     }
     return res.status(500).json({ message: "Server error" })
   }
@@ -228,7 +212,6 @@ exports.updateMovie = async (req, res) => {
 exports.deleteMovie = async (req, res) => {
   try {
     const movie = await Movie.findById(req.params.id)
-
     if (!movie) {
       return res.status(404).json({ message: "Movie not found" })
     }
@@ -242,9 +225,7 @@ exports.deleteMovie = async (req, res) => {
 
     await Movie.findByIdAndDelete(req.params.id)
 
-    return res.status(200).json({
-      message: "Movie deleted successfully"
-    })
+    return res.status(200).json({ message: "Movie deleted successfully" })
   } catch (error) {
     return res.status(500).json({ message: "Server error" })
   }
@@ -256,13 +237,11 @@ exports.deleteMovie = async (req, res) => {
 exports.toggleLikeMovie = async (req, res) => {
   try {
     const movie = await Movie.findById(req.params.id)
-
     if (!movie) {
       return res.status(404).json({ message: "Movie not found" })
     }
 
     const userId = req.user.id
-
     const alreadyLiked = movie.likes.some((id) => String(id) === String(userId))
 
     if (alreadyLiked) {
@@ -326,11 +305,7 @@ exports.rateMovie = async (req, res) => {
 // ===============================
 exports.getComments = async (req, res) => {
   try {
-    const movie = await Movie.findById(req.params.id).populate(
-      "comments.userId",
-      "username"
-    )
-
+    const movie = await Movie.findById(req.params.id).populate("comments.userId", "username")
     if (!movie) return res.status(404).json({ message: "Movie not found" })
 
     const threadedComments = buildThreadedComments(movie.comments)
@@ -461,10 +436,7 @@ exports.deleteComment = async (req, res) => {
     }
 
     const idsToDelete = collectDescendants(movie.comments, commentId)
-
-    movie.comments = movie.comments.filter(
-      (c) => !idsToDelete.includes(String(c._id))
-    )
+    movie.comments = movie.comments.filter((c) => !idsToDelete.includes(String(c._id)))
 
     await movie.save()
 
@@ -480,7 +452,7 @@ exports.deleteComment = async (req, res) => {
 exports.reactToComment = async (req, res) => {
   try {
     const { movieId, commentId } = req.params
-    const { type } = req.body // "like" or "dislike"
+    const { type } = req.body
     const userId = req.user.id
 
     if (!["like", "dislike"].includes(type)) {
@@ -493,7 +465,6 @@ exports.reactToComment = async (req, res) => {
     const comment = movie.comments.id(commentId)
     if (!comment) return res.status(404).json({ message: "Comment not found" })
 
-    // Remove from both first (prevents duplicates + switching)
     comment.likes = comment.likes.filter((id) => String(id) !== String(userId))
     comment.dislikes = comment.dislikes.filter((id) => String(id) !== String(userId))
 
@@ -518,7 +489,6 @@ exports.reactToComment = async (req, res) => {
 exports.getAllCommentsAdmin = async (req, res) => {
   try {
     const movies = await Movie.find().populate("comments.userId", "username")
-
     const allComments = []
 
     movies.forEach((movie) => {
@@ -538,54 +508,48 @@ exports.getAllCommentsAdmin = async (req, res) => {
       })
     })
 
-    return res.status(200).json({
-      totalComments: allComments.length,
-      comments: allComments
-    })
+    return res.status(200).json({ totalComments: allComments.length, comments: allComments })
   } catch (error) {
     return res.status(500).json({ message: "Server error" })
   }
 }
 
 // ===============================
-// TOGGLE WATCHLIST
+// TOGGLE WATCHLIST (NO user.save validation issues)
 // ===============================
 exports.toggleWatchlist = async (req, res) => {
   try {
     const userId = req.user.id
     const movieId = req.params.movieId
 
+    if (!mongoose.Types.ObjectId.isValid(movieId)) {
+      return res.status(400).json({ message: "Invalid movie ID" })
+    }
+
     const movie = await Movie.findById(movieId)
     if (!movie) {
       return res.status(404).json({ message: "Movie not found" })
     }
 
-    const user = await User.findById(userId)
+    const user = await User.findById(userId).select("watchlist")
     if (!user) {
       return res.status(404).json({ message: "User not found" })
     }
 
-    if (!Array.isArray(user.watchlist)) {
-      user.watchlist = []
-    }
-
-    const exists = user.watchlist.some(
-      (id) => String(id) === String(movieId)
-    )
+    const exists = (user.watchlist || []).some((id) => String(id) === String(movieId))
 
     if (exists) {
-      user.watchlist = user.watchlist.filter(
-        (id) => String(id) !== String(movieId)
-      )
+      await User.updateOne({ _id: userId }, { $pull: { watchlist: movieId } })
     } else {
-      user.watchlist.push(movieId)
+      await User.updateOne({ _id: userId }, { $addToSet: { watchlist: movieId } })
     }
 
-    await user.save()
+    const updated = await User.findById(userId).select("watchlist")
+    const totalWatchlist = updated?.watchlist?.length || 0
 
     return res.status(200).json({
       message: exists ? "Removed from watchlist" : "Added to watchlist",
-      totalWatchlist: user.watchlist.length
+      totalWatchlist
     })
   } catch (error) {
     console.log("WATCHLIST ERROR >>>", error)
@@ -598,20 +562,10 @@ exports.toggleWatchlist = async (req, res) => {
 // ===============================
 exports.getWatchlist = async (req, res) => {
   try {
-    const User = require("../models/User")   // 🔥 Lazy require
+    const user = await User.findById(req.user.id).populate("watchlist")
+    if (!user) return res.status(404).json({ message: "User not found" })
 
-    const user = await User.findById(req.user.id)
-      .populate("watchlist")
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" })
-    }
-
-    return res.status(200).json({
-      total: user.watchlist.length,
-      watchlist: user.watchlist
-    })
-
+    return res.status(200).json({ total: user.watchlist.length, watchlist: user.watchlist })
   } catch (error) {
     console.log("GET WATCHLIST ERROR >>>", error)
     return res.status(500).json({ message: "Server error" })
@@ -623,29 +577,28 @@ exports.getWatchlist = async (req, res) => {
 // ===============================
 exports.getAdminDashboard = async (req, res) => {
   try {
-    const User = require("../models/User")   // 🔥 Lazy require
-
-    const totalMovies = await Movie.countDocuments()
     const totalUsers = await User.countDocuments()
+    const totalMovies = await Movie.countDocuments()
 
-    const recentMovies = await Movie.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
+    const movies = await Movie.find()
 
-    const recentUsers = await User.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .select("-password")
+    let totalComments = 0
+    let totalRatings = 0
+    let totalMovieLikes = 0
 
-    return res.status(200).json({
-      stats: {
-        totalMovies,
-        totalUsers
-      },
-      recentMovies,
-      recentUsers
+    movies.forEach((movie) => {
+      totalComments += movie.comments.length
+      totalRatings += movie.ratings.length
+      totalMovieLikes += movie.likes.length
     })
 
+    return res.status(200).json({
+      totalUsers,
+      totalMovies,
+      totalComments,
+      totalRatings,
+      totalMovieLikes
+    })
   } catch (error) {
     console.log("ADMIN DASHBOARD ERROR >>>", error)
     return res.status(500).json({ message: "Server error" })
