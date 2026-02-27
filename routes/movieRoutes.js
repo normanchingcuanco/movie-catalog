@@ -1,80 +1,112 @@
-const express = require("express");
-const router = express.Router();
-const movieController = require("../controllers/movieController");
-const auth = require("../auth");
+const express = require("express")
+const router = express.Router()
+
+const movieController = require("../controllers/movieController")
+const auth = require("../auth")
 
 // ===============================
-// MOVIE ROUTES
+// Public Routes
 // ===============================
+router.get("/getMovies", movieController.getMovies)
+router.get("/getMovie/:id", movieController.getMovieById)
+router.get("/getComments/:id", movieController.getComments)
 
-// -------------------------------
-// ADMIN-ONLY MOVIE MANAGEMENT
-// -------------------------------
+// ===============================
+// Admin-only Routes
+// ===============================
+router.get(
+  "/admin/getAllComments",
+  auth.verify,
+  auth.verifyAdmin,
+  movieController.getAllCommentsAdmin
+)
 
-// Add Movie (Admin only)
 router.post(
-    "/addMovie",
-    auth.verify,
-    auth.verifyAdmin,
-    movieController.addMovie
-);
+  "/addMovie",
+  auth.verify,
+  auth.verifyAdmin,
+  movieController.addMovie
+)
 
-// Update Movie (Admin only)
 router.patch(
-    "/updateMovie/:id",
-    auth.verify,
-    auth.verifyAdmin,
-    movieController.updateMovie
-);
+  "/updateMovie/:id",
+  auth.verify,
+  auth.verifyAdmin,
+  movieController.updateMovie
+)
 
-// Delete Movie (Admin only)
 router.delete(
-    "/deleteMovie/:id",
-    auth.verify,
-    auth.verifyAdmin,
-    movieController.deleteMovie
-);
+  "/deleteMovie/:id",
+  auth.verify,
+  auth.verifyAdmin,
+  movieController.deleteMovie
+)
 
-// -------------------------------
-// PUBLIC MOVIE ROUTES
-// -------------------------------
+router.get(
+  "/admin/dashboard",
+  auth.verify,
+  auth.verifyAdmin,
+  movieController.getAdminDashboard
+)
 
-router.get("/getMovies", movieController.getMovies);
-router.get("/getMovie/:id", movieController.getMovieById);
-
-// -------------------------------
-// COMMENT ROUTES
-// -------------------------------
-
-// Add top-level comment
+// ===============================
+// Logged-in User Routes
+// ===============================
 router.patch(
-    "/addComment/:id",
-    auth.verify,
-    movieController.addComment
-);
+  "/likeMovie/:id",
+  auth.verify,
+  movieController.toggleLikeMovie
+)
 
-// Reply to comment (nested)
 router.patch(
-    "/replyComment/:movieId/:commentId",
-    auth.verify,
-    movieController.replyToComment
-);
+  "/rateMovie/:id",
+  auth.verify,
+  movieController.rateMovie
+)
 
-// Edit comment (owner OR admin)
 router.patch(
-    "/editComment/:movieId/:commentId",
-    auth.verify,
-    movieController.editComment
-);
+  "/addComment/:id",
+  auth.verify,
+  movieController.addComment
+)
 
-// Delete comment (owner OR admin)
+router.patch(
+  "/replyComment/:movieId/:commentId",
+  auth.verify,
+  movieController.replyToComment
+)
+
+router.patch(
+  "/editComment/:movieId/:commentId",
+  auth.verify,
+  movieController.editComment
+)
+
 router.delete(
-    "/deleteComment/:movieId/:commentId",
-    auth.verify,
-    movieController.deleteComment
-);
+  "/deleteComment/:movieId/:commentId",
+  auth.verify,
+  movieController.deleteComment
+)
 
-// Get comments (public)
-router.get("/getComments/:id", movieController.getComments);
+router.patch(
+  "/reactComment/:movieId/:commentId",
+  auth.verify,
+  movieController.reactToComment
+)
 
-module.exports = router;
+// ===============================
+// Watchlist (Logged-in)
+// ===============================
+router.patch(
+  "/watchlist/:movieId",
+  auth.verify,
+  movieController.toggleWatchlist
+)
+
+router.get(
+  "/watchlist",
+  auth.verify,
+  movieController.getWatchlist
+)
+
+module.exports = router
