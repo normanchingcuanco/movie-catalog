@@ -1,4 +1,5 @@
 const Movie = require("../models/Movie")
+const User = require("../models/User")
 const axios = require("axios")
 
 // ===============================
@@ -551,15 +552,21 @@ exports.getAllCommentsAdmin = async (req, res) => {
 // ===============================
 exports.toggleWatchlist = async (req, res) => {
   try {
-    const User = require("../models/User")   // 🔥 Lazy require
-
     const userId = req.user.id
     const movieId = req.params.movieId
 
-    const user = await User.findById(userId)
+    const movie = await Movie.findById(movieId)
+    if (!movie) {
+      return res.status(404).json({ message: "Movie not found" })
+    }
 
+    const user = await User.findById(userId)
     if (!user) {
       return res.status(404).json({ message: "User not found" })
+    }
+
+    if (!Array.isArray(user.watchlist)) {
+      user.watchlist = []
     }
 
     const exists = user.watchlist.some(
@@ -577,12 +584,9 @@ exports.toggleWatchlist = async (req, res) => {
     await user.save()
 
     return res.status(200).json({
-      message: exists
-        ? "Removed from watchlist"
-        : "Added to watchlist",
+      message: exists ? "Removed from watchlist" : "Added to watchlist",
       totalWatchlist: user.watchlist.length
     })
-
   } catch (error) {
     console.log("WATCHLIST ERROR >>>", error)
     return res.status(500).json({ message: "Server error" })
