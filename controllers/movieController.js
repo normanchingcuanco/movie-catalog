@@ -154,20 +154,44 @@ exports.getMovies = async (req, res) => {
 
     const skip = (page - 1) * limit
 
-    let movies = await Movie.find(query).skip(skip).limit(limit)
+    let movies = await Movie.find(query)
+      .skip(skip)
+      .limit(limit)
 
-    if (sort === "highestRated") {
-      movies = movies.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0))
-    } else if (sort === "mostLiked") {
-      movies = movies.sort((a, b) => (b.likes?.length || 0) - (b.likes?.length || 0))
-    } else if (sort === "trending") {
+    // ================= SORTING =================
+    if (sort === "titleAsc") {
+      movies = movies.sort((a, b) =>
+        a.title.localeCompare(b.title)
+      )
+    }
+    else if (sort === "highestRated") {
+      movies = movies.sort((a, b) =>
+        (b.averageRating || 0) - (a.averageRating || 0)
+      )
+    }
+    else if (sort === "mostLiked") {
+      movies = movies.sort((a, b) =>
+        (b.likes?.length || 0) - (a.likes?.length || 0)
+      )
+    }
+    else if (sort === "trending") {
       movies = movies.sort((a, b) => {
-        const scoreA = (a.averageRating || 0) * 2 + (a.likes?.length || 0)
-        const scoreB = (b.averageRating || 0) * 2 + (b.likes?.length || 0)
+        const scoreA =
+          (a.averageRating || 0) * 2 +
+          (a.likes?.length || 0)
+
+        const scoreB =
+          (b.averageRating || 0) * 2 +
+          (b.likes?.length || 0)
+
         return scoreB - scoreA
       })
-    } else {
-      movies = movies.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    }
+    else {
+      // Default: newest first
+      movies = movies.sort((a, b) =>
+        new Date(b.createdAt) - new Date(a.createdAt)
+      )
     }
 
     const total = await Movie.countDocuments(query)
@@ -325,7 +349,9 @@ exports.rateMovie = async (req, res) => {
 // ===============================
 exports.getComments = async (req, res) => {
   try {
-    const movie = await Movie.findById(req.params.id).populate("comments.userId", "username")
+    const movie = await Movie.findById(req.params.id)
+      .populate("comments.userId", "username")
+
     if (!movie) return res.status(404).json({ message: "Movie not found" })
 
     const threadedComments = buildThreadedComments(movie.comments)
@@ -345,6 +371,7 @@ exports.getComments = async (req, res) => {
 exports.addComment = async (req, res) => {
   try {
     const comment = (req.body.comment || "").trim()
+
     if (!comment) {
       return res.status(400).json({ message: "Comment is required." })
     }
@@ -528,14 +555,22 @@ exports.getAllCommentsAdmin = async (req, res) => {
       })
     })
 
-    return res.status(200).json({ totalComments: allComments.length, comments: allComments })
+    // ✅ SORT COMMENTS BY NEWEST FIRST
+    allComments.sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    )
+
+    return res.status(200).json({
+      totalComments: allComments.length,
+      comments: allComments
+    })
   } catch (error) {
     return res.status(500).json({ message: "Server error" })
   }
 }
 
 // ===============================
-// TOGGLE WATCHLIST (NO user.save validation issues)
+// TOGGLE WATCHLIST
 // ===============================
 exports.toggleWatchlist = async (req, res) => {
   try {
@@ -547,14 +582,10 @@ exports.toggleWatchlist = async (req, res) => {
     }
 
     const movie = await Movie.findById(movieId)
-    if (!movie) {
-      return res.status(404).json({ message: "Movie not found" })
-    }
+    if (!movie) return res.status(404).json({ message: "Movie not found" })
 
     const user = await User.findById(userId).select("watchlist")
-    if (!user) {
-      return res.status(404).json({ message: "User not found" })
-    }
+    if (!user) return res.status(404).json({ message: "User not found" })
 
     const exists = (user.watchlist || []).some((id) => String(id) === String(movieId))
 
@@ -572,7 +603,6 @@ exports.toggleWatchlist = async (req, res) => {
       totalWatchlist
     })
   } catch (error) {
-    console.log("WATCHLIST ERROR >>>", error)
     return res.status(500).json({ message: "Server error" })
   }
 }
@@ -585,9 +615,11 @@ exports.getWatchlist = async (req, res) => {
     const user = await User.findById(req.user.id).populate("watchlist")
     if (!user) return res.status(404).json({ message: "User not found" })
 
-    return res.status(200).json({ total: user.watchlist.length, watchlist: user.watchlist })
+    return res.status(200).json({
+      total: user.watchlist.length,
+      watchlist: user.watchlist
+    })
   } catch (error) {
-    console.log("GET WATCHLIST ERROR >>>", error)
     return res.status(500).json({ message: "Server error" })
   }
 }
@@ -600,7 +632,8 @@ exports.getAdminDashboard = async (req, res) => {
     const totalUsers = await User.countDocuments()
     const totalMovies = await Movie.countDocuments()
 
-    const movies = await Movie.find()
+    // ✅ SORT MOVIES BY TITLE (A → Z)
+    const movies = await Movie.find().sort({ title: 1 })
 
     let totalComments = 0
     let totalRatings = 0
@@ -634,7 +667,10 @@ exports.getAllMoviesAdmin = async (req, res) => {
       return res.status(403).json({ message: "Unauthorized" })
     }
 
+    // ✅ Sort alphabetically by title (A → Z), case-insensitive
     const movies = await Movie.find({})
+      .collation({ locale: "en", strength: 2 })
+      .sort({ title: 1 })
 
     return res.status(200).json({ movies })
   } catch (error) {
