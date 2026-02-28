@@ -624,3 +624,21 @@ exports.getAdminDashboard = async (req, res) => {
     return res.status(500).json({ message: "Server error" })
   }
 }
+
+// ===============================
+// ADMIN - GET ALL MOVIES (NO PAGINATION)
+// ===============================
+exports.getAllMoviesAdmin = async (req, res) => {
+  try {
+    if (!req.user || req.user.isAdmin !== true) {
+      return res.status(403).json({ message: "Unauthorized" })
+    }
+
+    const movies = await Movie.find({})
+
+    return res.status(200).json({ movies })
+  } catch (error) {
+    console.log("ADMIN GET ALL MOVIES ERROR >>>", error)
+    return res.status(500).json({ message: "Server error" })
+  }
+}

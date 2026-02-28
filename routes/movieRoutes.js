@@ -3,6 +3,9 @@ const router = express.Router()
 
 const movieController = require("../controllers/movieController")
 const auth = require("../auth")
+console.log("getAllMoviesAdmin >>>", movieController.getAllMoviesAdmin)
+console.log("auth >>>", auth)
+
 
 // ===============================
 // Public Routes
@@ -26,6 +29,13 @@ router.get(
   auth.verify,
   auth.verifyAdmin,
   movieController.getAdminDashboard
+)
+
+router.get(
+  "/admin/getAllMovies",
+  auth.verify,
+  auth.verifyAdmin,
+  movieController.getAllMoviesAdmin
 )
 
 // ===============================
