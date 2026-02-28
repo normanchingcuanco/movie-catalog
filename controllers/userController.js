@@ -52,18 +52,33 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body
 
+    // Basic validation
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" })
+    }
+
     const user = await User.findOne({ email })
+
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" })
     }
 
-    const isPasswordCorrect = await bcrypt.compare(
-      password,
-      user.password
-    )
+    // Safety check in case password field is missing
+    if (!user.password) {
+      console.error("User has no password field:", user)
+      return res.status(500).json({ message: "User record corrupted" })
+    }
+
+    const isPasswordCorrect = await bcrypt.compare(password, user.password)
 
     if (!isPasswordCorrect) {
       return res.status(400).json({ message: "Invalid credentials" })
+    }
+
+    // Ensure JWT secret exists
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is missing in environment variables")
+      return res.status(500).json({ message: "Server configuration error" })
     }
 
     const token = jwt.sign(
@@ -86,8 +101,13 @@ exports.login = async (req, res) => {
         isAdmin: user.isAdmin
       }
     })
+
   } catch (error) {
-    return res.status(500).json({ message: "Server error" })
+    console.error("LOGIN ERROR >>>", error)
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message
+    })
   }
 }
 
