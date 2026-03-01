@@ -154,17 +154,22 @@ exports.getMovies = async (req, res) => {
 
     const skip = (page - 1) * limit
 
+    let sortOption = {}
+
+    // ================= DB SORTING (Title A-Z + Newest) =================
+    if (sort === "titleAsc") {
+      sortOption = { title: 1 }
+    } else if (!sort) {
+      sortOption = { createdAt: -1 } // default newest
+    }
+
     let movies = await Movie.find(query)
+      .sort(sortOption)
       .skip(skip)
       .limit(limit)
 
-    // ================= SORTING =================
-    if (sort === "titleAsc") {
-      movies = movies.sort((a, b) =>
-        a.title.localeCompare(b.title)
-      )
-    }
-    else if (sort === "highestRated") {
+    // ================= MEMORY SORTING (Computed Fields) =================
+    if (sort === "highestRated") {
       movies = movies.sort((a, b) =>
         (b.averageRating || 0) - (a.averageRating || 0)
       )
@@ -186,12 +191,6 @@ exports.getMovies = async (req, res) => {
 
         return scoreB - scoreA
       })
-    }
-    else {
-      // Default: newest first
-      movies = movies.sort((a, b) =>
-        new Date(b.createdAt) - new Date(a.createdAt)
-      )
     }
 
     const total = await Movie.countDocuments(query)
@@ -535,7 +534,15 @@ exports.reactToComment = async (req, res) => {
 // ===============================
 exports.getAllCommentsAdmin = async (req, res) => {
   try {
-    const movies = await Movie.find().populate("comments.userId", "username")
+
+    // 🔒 Ensure only admins can access
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ message: "Access denied" })
+    }
+
+    const movies = await Movie.find()
+      .populate("comments.userId", "username")
+
     const allComments = []
 
     movies.forEach((movie) => {
@@ -547,23 +554,22 @@ exports.getAllCommentsAdmin = async (req, res) => {
           username: comment.userId?.username || "Unknown",
           comment: comment.comment,
           parentCommentId: comment.parentCommentId,
-          likes: comment.likes.length,
-          dislikes: comment.dislikes.length,
+          likes: comment.likes?.length || 0,
+          dislikes: comment.dislikes?.length || 0,
           createdAt: comment.createdAt,
           updatedAt: comment.updatedAt
         })
       })
     })
 
-    // ✅ SORT COMMENTS BY NEWEST FIRST
-    allComments.sort(
-      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-    )
+    // ✅ SORT COMMENTS BY NEWEST FIRST (createdAt DESC)
+    allComments.sort((a, b) => b.createdAt - a.createdAt)
 
     return res.status(200).json({
       totalComments: allComments.length,
       comments: allComments
     })
+
   } catch (error) {
     return res.status(500).json({ message: "Server error" })
   }
