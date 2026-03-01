@@ -11,36 +11,36 @@ exports.register = async (req, res) => {
     const { username, email, password } = req.body
 
     if (!username || !email || !password) {
-      return res.status(400).json({ message: "All fields are required." })
+      return res.status(400).json({ message: "All fields are required" })
     }
 
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }]
-    })
+    const normalizedEmail = email.toLowerCase()
 
+    const existingUser = await User.findOne({ email: normalizedEmail })
     if (existingUser) {
-      return res.status(400).json({
-        message: "Username or email already exists"
-      })
+      return res.status(400).json({ message: "User already exists" })
     }
 
     const hashedPassword = await bcrypt.hash(password, 10)
 
-    const newUser = await User.create({
+    const user = await User.create({
       username,
-      email,
+      email: normalizedEmail,
       password: hashedPassword
     })
 
     return res.status(201).json({
-      message: "Registered Successfully",
+      message: "User registered successfully",
       user: {
-        _id: newUser._id,
-        username: newUser.username,
-        email: newUser.email
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        isAdmin: user.isAdmin
       }
     })
+
   } catch (error) {
+    console.error("REGISTER ERROR >>>", error)
     return res.status(500).json({ message: "Server error" })
   }
 }
@@ -50,35 +50,34 @@ exports.register = async (req, res) => {
 // ===============================
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body
+    let { email, password } = req.body
 
-    // Basic validation
+    console.log("REQ BODY >>>", req.body)
+
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password are required" })
     }
 
-    const user = await User.findOne({ email })
+    if (typeof email !== "string") {
+      email = String(email)
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+
+    const user = await User.findOne({ email: normalizedEmail })
+
+    console.log("USER FOUND >>>", user)
 
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" })
     }
 
-    // Safety check in case password field is missing
-    if (!user.password) {
-      console.error("User has no password field:", user)
-      return res.status(500).json({ message: "User record corrupted" })
-    }
-
     const isPasswordCorrect = await bcrypt.compare(password, user.password)
+
+    console.log("PASSWORD MATCH >>>", isPasswordCorrect)
 
     if (!isPasswordCorrect) {
       return res.status(400).json({ message: "Invalid credentials" })
-    }
-
-    // Ensure JWT secret exists
-    if (!process.env.JWT_SECRET) {
-      console.error("JWT_SECRET is missing in environment variables")
-      return res.status(500).json({ message: "Server configuration error" })
     }
 
     const token = jwt.sign(
@@ -104,10 +103,7 @@ exports.login = async (req, res) => {
 
   } catch (error) {
     console.error("LOGIN ERROR >>>", error)
-    return res.status(500).json({
-      message: "Server error",
-      error: error.message
-    })
+    return res.status(500).json({ message: "Server error" })
   }
 }
 
